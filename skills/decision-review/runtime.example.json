@@ -1,0 +1,8 @@
+{
+  "binary": "/absolute/path/to/review-plan",
+  "gateway_config": "/absolute/path/to/private-gateway-config.yaml",
+  "search_binary": "/absolute/path/to/review-search",
+  "model": "your-verified-deepseek-model-alias",
+  "checkpoint_state_dir": "/absolute/path/to/private-checkpoint-state",
+  "checkpoint_scopes": ["/absolute/path/to/your-project"]
+}

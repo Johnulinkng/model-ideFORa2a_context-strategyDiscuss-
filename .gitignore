@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+runtime.json
+*.local.json
+.env
+.env.*
+checkpoints/
+backups/
+bin/
+*.lock

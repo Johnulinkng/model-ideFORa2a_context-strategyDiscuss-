@@ -1,0 +1,77 @@
+{
+  "case": "Stop 文档取证：从头部摘录改为问题相关正文",
+  "record_type": "真实已完成任务的关键原文摘录；不是模拟对话。重复背景、长网页和测试日志已省略。",
+  "background_summary": "同一查询和同3份上游原文哈希/长度下，旧头部摘录漏Stop本节；新选段保住E1/E2关键条款，E3不作Stop语义证据。真实Search一次，DS两轮，当前Codex判断。",
+  "messages": [
+    {
+      "speaker": "Codex → DS",
+      "kind": "原文：实际主问句",
+      "text": "这里是目前的上下文、我的验收结果和最开始的请求。你看看这个结果是否能满足我最开始的请求意图；如果按照业界标准，这样的结果/指标是否已经达成；这里的见解和结论有没有问题？如果这里有缺任何上下文信息请询问我。请用较为简洁的表达来回答我。"
+    },
+    {
+      "speaker": "Codex → DS",
+      "kind": "原文：随包当前成果节选",
+      "text": "已实现query-paragraph-v1：用当前公开query选择命中正文，稀有标识符加权，保留标题和邻文；片段合并去重、按原文顺序输出，正文12KB/摘要4KB预算不变。"
+    },
+    {
+      "speaker": "DS → Codex，首轮",
+      "kind": "原文：首轮总体判断",
+      "text": "**结论：部分满足。** 本地修复、真实 Search 和选段证据基本成立；但“发给 DS 的端到端验收”和“通信提示词实际文本”还没有闭环，因此不能判定最初请求已全部完成。"
+    },
+    {
+      "speaker": "DS → Codex，首轮",
+      "kind": "原文摘录",
+      "text": "- 根据你提供的回执，E1、E2 的 12KB 选段内确实包含 Stop 节关键内容：`stop_hook_active`、`decision:\"block\"` 的继续语义、`continue:false` 优先规则，以及 `continue:false` 在 PostToolUse 中的不同含义。"
+    },
+    {
+      "speaker": "DS → Codex，首轮",
+      "kind": "原文摘录",
+      "text": "- 通信提示词只看到“已清理固定模板”的说明，未看到实际提示词文本，无法确认“不出现固定细颗粒回答模板”。"
+    },
+    {
+      "speaker": "Codex → DS，补充",
+      "kind": "原文摘录",
+      "text": "用JSON解析实际consult_context里的evidence，得到的sources与Search选段回执逐字段、逐字一致，没有再裁剪；"
+    },
+    {
+      "speaker": "Codex → DS，补充",
+      "kind": "原文摘录，包含需要澄清的数量表述",
+      "text": "实际资料中的原始问句、footer及7条系统prompt全文附后供你核对。"
+    },
+    {
+      "speaker": "DS → Codex，第二轮",
+      "kind": "原文摘录",
+      "text": "- **修复与证据**：材料显示 E1/E2 选段已包含 Stop 本节、`stop_hook_active`、`decision:\"block\"` 继续并创建新 continuation prompt、`continue:false` 优先规则；旧版头部无 Stop，且同查询、同原文长度/哈希排除了网页变化。这足以支持“头部漏条款已修复，Stop 关键证据在选段中保住”。但仍有 `omitted_matching_blocks`，只能证明 Stop 关键节，不能泛化为所有网页语义完整；E3 不是 Stop 证据。"
+    },
+    {
+      "speaker": "DS → Codex，第二轮",
+      "kind": "原文摘录",
+      "text": "- **通信提示词**：已列出的 6 条 prompt 文本符合自然、简短、不套固定格式；DS 自然分点不等于被模板约束。但补充说 7 条，材料 JSON 只有 6 个 prompt 键，需补第 7 条才能完全核对。"
+    },
+    {
+      "speaker": "DS → Codex，第二轮",
+      "kind": "原文摘录，错误日期",
+      "text": "4. 检索时间戳 `2026-11-06` 晚于当前日期 `2026-05-07`，请确认时钟/回执来源是否异常。"
+    },
+    {
+      "speaker": "Codex，最终判断",
+      "kind": "原文摘录",
+      "text": "我的验收结论为本次修复已在本地完成：同一公开查询、同3个URL和完整原文哈希/长度下，旧版无Stop本节，新版实际consult_context中的E1/E2保住Stop本节、stop_hook_active、block继续并生成新continuation及continue:false优先规则。实际资料已JSON解析后与回执逐字核对，原始成果和用户简短问句/footer保持；独立只读审计也核对，15项安装哈希一致，Python85项和相关Go race通过。DS第二轮已回到当前Codex，并且未重搜。"
+    }
+  ],
+  "audit": [
+    "首轮要求补提示词实际文本是合理的，本地事实补充进入第二轮，无需用户搬运。",
+    "补充文字将6条系统提示词加1条footer误称为7条系统提示词；JSON按6+1分别列出。应由Codex承担口径不一致，不能全部归咎DS误读。",
+    "DS日期判断错误；任务时钟和宿主UTC均为2026-11-06，Codex未采纳其2026-05-07说法。",
+    "对自身未来回执的重复索取由Codex在模型返回后核验，未发第三轮或重建同题检查点索要通过。",
+    "后来的用户continue使原检查点变为superseded，主判断归档；未伪称原检查点decide成功。",
+    "这些问题已澄清且未改变Stop实际送达的事实，可作为带边界说明的发布案例；不代表任何模型回答都正确。"
+  ],
+  "local_original_sha256": {
+    "live-review.json": "fc45e8015b374aa7276aea624e3152e894056aa2a90b0869a79db0579f6d9d3a",
+    "live-round2.json": "26c0c1aa59ae552fcbb43754a4392f7e8cd2b2f22d7f9e2346be362e426dfff3",
+    "supplement.json": "b16031e3fe9bcdc9297efa34d8c4b429bb7a1d825c9c84ba083640f5a11497d1",
+    "main-decision.json": "661c19ecc635ff956be10a328b07d672e2e2db51455885487fcbf7c168f6fd5d"
+  },
+  "source_note": "完整本机包含本机路径，未发布；哈希仅标识本次原文版本，不能代替对话内容或远端供应商日志。"
+}
