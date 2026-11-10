@@ -40,39 +40,55 @@
 
 不再追加条数、固定格式或指标清单。额外 `review_question` 只用于用户本轮明确补充的问题。收到 DS 意见后，由当前 Codex 结合原始目标和实际证据自行判断下一步，不将 DS 的回复直接当成验收裁决。
 
-调用顺序：
+在普通终端演练时，先完成本机配置，再进入已登记的项目根目录。整个往返沿用同一个会话 ID 和工作目录。[本机配置](runtime.md)
 
 ```sh
-python3 <SKILL_DIR>/scripts/review_checkpoint.py register --request-file /absolute/checkpoint.json
-python3 <SKILL_DIR>/scripts/review_checkpoint.py review --request-file /absolute/checkpoint.json --output /absolute/ds-result.json
+printf 'decision-review 安装目录的绝对路径：'
+IFS= read -r REVIEW_SKILL_DIR
+printf '待复核资料包 JSON 的绝对路径：'
+IFS= read -r REVIEW_REQUEST
+REVIEW_SESSION_ID="$(python3 -c 'from uuid import uuid4; print(uuid4())')"
+REVIEW_RUN_DIR="$(mktemp -d)"
+REVIEW_CLI="$REVIEW_SKILL_DIR/scripts/review_checkpoint.py"
+
+python3 "$REVIEW_CLI" register --session-id "$REVIEW_SESSION_ID" \
+  --request-file "$REVIEW_REQUEST" &&
+python3 "$REVIEW_CLI" review --session-id "$REVIEW_SESSION_ID" \
+  --request-file "$REVIEW_REQUEST" --output "$REVIEW_RUN_DIR/ds-result.json" &&
+REVIEW_CHECKPOINT_ID="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["checkpoint"]["checkpoint_id"])' "$REVIEW_RUN_DIR/ds-result.json")"
 ```
 
-登记不联网；首次送审调用一次现有复核工具。输出含检查点 ID、当前成果 SHA-256、DS 原文及 `consultation.round/max_rounds`。DS 若请求缺失上下文，由当前 Codex 查证并准备简短补充文件，不要求 DS 使用固定回复格式：
+登记返回 `pending`。复核成功后，`ds-result.json` 包含 `reviewed` 状态、检查点 ID、当前成果 SHA-256、DS 原文和 `consultation.round/max_rounds`。DS 请求缺失上下文时，由当前 Codex 查证后把补充资料写到 `$REVIEW_RUN_DIR/supplement.json`。
 
 ```json
 {"context_request":"DS希望补充什么，保留必要原话，说明为什么需要补。","supplement":"Codex从授权上下文或工具中取得的事实及必要内容；未查到的明确说明。"}
 ```
 
 ```sh
-python3 <SKILL_DIR>/scripts/review_checkpoint.py followup --checkpoint-id RETURNED_ID --request-file /absolute/supplement.json --output /absolute/ds-round2.json
+python3 "$REVIEW_CLI" followup --session-id "$REVIEW_SESSION_ID" \
+  --checkpoint-id "$REVIEW_CHECKPOINT_ID" \
+  --request-file "$REVIEW_RUN_DIR/supplement.json" \
+  --output "$REVIEW_RUN_DIR/ds-round2.json"
 ```
 
 `followup` 沿用原始包和成果，不以新检查点重置计数；自动带上首轮顾问原文、询问原因与补充。原包、首轮和第二轮回文分别留档；检索资料在第二轮复用，不重复搜索。第二轮后不同补充被拒绝；完全相同的已完成补充只读缓存。主助手确实需要新检索或有实质新成果时才开启新阶段，不能为重复追问重置上限。两轮仍不能确定就如实说明限制，由 Codex 判断继续查事实、等待必要用户信息或交付，不再向 DS 追问。
 
 CLI 同会话调用用非阻塞文件锁串行化，忙时返回 `checkpoint_busy`，不启动并行重复咨询；Hook 可立即标记中断，迟到回复不能恢复已失效的检查点。外部请求崩溃或失败不代表已取得意见，不能据此交付已复核的结论。
 
-主助手读完一轮或两轮意见后准备判断文件：
+主助手读完顾问意见后，把自己的判断写到 `$REVIEW_RUN_DIR/decision.json`。
 
 ```json
 {"decision":"采纳哪些、暂不采纳哪些及证据；接下来做什么验证。","action":"continue"}
 ```
 
 ```sh
-python3 <SKILL_DIR>/scripts/review_checkpoint.py decide --checkpoint-id RETURNED_ID --decision-file /absolute/decision.json
+python3 "$REVIEW_CLI" decide --session-id "$REVIEW_SESSION_ID" \
+  --checkpoint-id "$REVIEW_CHECKPOINT_ID" \
+  --decision-file "$REVIEW_RUN_DIR/decision.json"
 ```
 
 `action` 为 `continue` 或 `deliver`；只有 `delivery` 检查点能记为 `deliver`，并且必须已有成功复核。记录判断不等于完成后续测试；操作仍要遵守原权限。成果实质修改后用新资料包再复核。同版缓存同时绑定资料包及非敏感路由指纹（模型别名、网关配置路径和工具路径），这些配置变化会新建检查点；指纹不读取凭据内容。它不监视同一路径内部的配置变化，主助手确认上游或目标模型实质变化时也应更新资料包，重新咨询。
 
 状态只在当前会话、工作目录和配置作用域内生效。新用户消息使旧待处理状态失效；Stop 自己产生的同检查点续跑保留状态。用户中断变为 `interrupted`。Stop 只检查显式 `pending` 或 `reviewed` 状态，每检查点最多发一次续跑要求；`reviewed` 表示 DS 已返回，`decided` 表示主助手已记录判断。它不能识别未登记的工作。
 
-审阅 `hooks/checkpoints.json` 后，可在桌面 Settings → Hooks（或 CLI `/hooks`）信任。此步骤是官方产品要求；在信任并观察真实事件前，只报告脚本模拟通过。官方约定见 https://learn.chatgpt.com/docs/hooks 。
+需要 Stop 兜底时，先运行 `configure.py --print-hooks` 生成当前安装路径对应的配置，再在宿主审阅并信任。实际事件是否生效，以宿主运行记录为准。[配置步骤](runtime.md#可选-stop-兜底)

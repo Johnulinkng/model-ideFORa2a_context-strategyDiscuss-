@@ -1,30 +1,82 @@
-# Model IDE：精简上下文与顾问复核
+# Model IDE · Decision Review
 
-让当前 Codex 先形成方案，再把必要上下文、实际成果和验收交给 DeepSeek。顾问意见原文回到当前 Codex，由它判断、修改和验证，继续推进任务。
+一次核对 Codex 的 Stop 续跑行为时，搜索找到了官方文档，但旧版只取网页前 12 KB，漏掉了真正的 Stop 条款。改按问题选择正文、标题和邻文后，同一份原文里的 `stop_hook_active`、续跑含义和 `continue: false` 优先规则都进入了送审资料。
 
-需要补信息时，Codex 查事实并回传；同一检查点最多两轮。简单任务跳过。提示词沿用自然简短问句，不强制回答条数、排序或栏目。
+| 往返 | 原文节选 |
+| --- | --- |
+| Codex 提问 | 你看看这个结果是否能满足我最开始的请求意图 […] 如果这里有缺任何上下文信息请询问我。 |
+| DeepSeek 首轮 | 通信提示词只看到“已清理固定模板”的说明，未看到实际提示词文本 |
+| Codex 补充 | 得到的sources与Search选段回执逐字段、逐字一致，没有再裁剪 |
+| DeepSeek 第二轮 | 这足以支持“头部漏条款已修复，Stop 关键证据在选段中保住”。 |
 
-- [真实通信往返与审查](docs/recent-roundtrip.md)：压缩背景，保留原始问题、关键回答和最终判断，也保留实际出现的错误。
-- [通用技能](skills/decision-review/SKILL.md)：关键方案、阶段成果和交付复核。
-- [本机配置](skills/decision-review/references/runtime.md)：登记项目并复用网关连接。
-- [工具适配协议](skills/decision-review/references/adapter-contract.md)：复核与搜索命令的输入输出约定。
+Codex 同时补上了提示词原文，最后用实际送审内容验收，也纠正了 DeepSeek 给出的错误日期。完整记录保留了顾问的追问和主助手的判断依据。[真实往返与判断](docs/recent-roundtrip.md)
 
-## 使用
+## 一次复核怎么走
 
-用 Codex 的 `$skill-installer` 安装此仓库中的 `skills/decision-review`，或将该目录放到宿主支持的技能目录。安装后，在新项目显式调用：
+```mermaid
+flowchart TD
+    A["Codex 接到任务"] --> B{"需要复杂复核？"}
+    B -->|否| C["直接处理"]
+    B -->|是| D["整理原始请求、方案、实际成果和验收"]
+    D --> E{"需要公开取证？"}
+    E -->|是| F["搜索并按问题摘录正文和邻文"]
+    E -->|否| G["DeepSeek 首轮复核"]
+    F --> G
+    G --> H{"缺少影响判断的上下文？"}
+    H -->|需要补充| I["Codex 查证并补充一次"]
+    I --> J["DeepSeek 第二轮复核"]
+    H -->|信息足够| K["Codex 核对证据并记录判断"]
+    J --> K
+    K --> L["继续修改、验证或交付"]
+```
 
-> `$decision-review` 帮我完成这个开发任务，复杂决策和交付前按复核流程推进。
+问句沿用用户的表达。背景能用几句话讲清就压缩，成果原文和关键验收保留。顾问回文返回当前任务，由 Codex 决定下一步。[技能说明](skills/decision-review/SKILL.md)
 
-首次由主助手配置已有本机工具及当前项目。已有兼容网关时，可从已有 runtime JSON 导入连接信息；不会继承旧项目范围。凭据留在本机，不放到仓库或聊天中。`runtime.json` 已忽略。
+## 快速开始
 
-本包依赖符合适配协议的复核／搜索可执行工具，提供 Python 工作流调用器和测试。它不包含模型网关、供应商凭据或编译好的网关二进制。需要外部取证时，搜索工具必须提供 `query-paragraph-v1` 回执；旧头部摘录不会被新校验器接受。
+### 1. 本地验证
 
-Stop 兜底需要宿主单独安装并信任配置；基础复核可以直接使用。可生成配置供审阅，不自动改全局 Hook。当前单 DS 调用，Claude 尚未作为此包的可用后端。Python 3.9+，macOS/Linux；Windows 锁适配尚未实现。
-
-## 验证
+准备 Git 和 Python 3.9+，在 macOS 或 Linux 终端运行。已有本地副本时，直接在仓库根目录执行最后一行。
 
 ```sh
+git clone https://github.com/Johnulinkng/model-ideFORa2a_context-strategyDiscuss-.git
+cd model-ideFORa2a_context-strategyDiscuss-
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s skills/decision-review/scripts -p 'test_*.py' -q
 ```
 
-测试使用本地模拟顾问回文，不会调用收费接口。真实 Stop 案例的搜索和 DS 回复摘录见通信记录；它验证该次关键证据保留，不代表任意网页语义完整或行业认证。
+当前版本的预期结果是 `Ran 93 tests` 和 `OK`。测试用模拟顾问回文检查项目范围、两轮上限、缓存和中断，可以在配置模型网关前运行。
+
+### 2. 真实复核
+
+准备 Python 3.9+、兼容的 `review-plan` 命令和能访问 DeepSeek 的本机网关配置。需要公开取证时，再准备支持 `query-paragraph-v1` 的 `review-search`。工具和网关配置由本机提供。[工具适配协议](skills/decision-review/references/adapter-contract.md)
+
+在 Codex 里发出安装请求。
+
+> `$skill-installer` 从 `Johnulinkng/model-ideFORa2a_context-strategyDiscuss-` 安装 `skills/decision-review`。
+
+在**要复核的项目根目录**打开终端。如果已有兼容的 `runtime.json`，运行以下命令，按提示输入实际路径。
+
+```sh
+printf 'decision-review 安装目录的绝对路径：'
+IFS= read -r REVIEW_SKILL_DIR
+printf '已有 runtime.json 的绝对路径：'
+IFS= read -r REVIEW_PROFILE
+python3 "$REVIEW_SKILL_DIR/scripts/configure.py" \
+  --profile-file "$REVIEW_PROFILE" \
+  --project "$PWD"
+```
+
+看到 `"status": "configured"` 表示工具路径和当前项目范围已登记。手上有工具和网关配置时，也可以直接绑定它们。[首次配置命令](skills/decision-review/references/runtime.md)
+
+在 Codex 打开同一个项目，把这句话和你的具体任务一起发出。
+
+> `$decision-review` 帮我推进这项任务。在关键决策和交付前，把原始需求、方案和验收交给 DeepSeek 复核。缺信息时你查证后补一轮，最后说明采纳了哪些意见。
+
+顾问回文返回时，复核结果为 `reviewed`，`advisors[0].content` 保存 DeepSeek 原文，`consultation.round` 显示当前轮次。Codex 写入自己的判断后，检查点成为 `decided`。[终端调用与状态说明](skills/decision-review/references/checkpoints.md)
+
+## 项目文档
+
+- [真实 Stop 案例与结构化摘录](docs/recent-roundtrip.md)
+- [本机配置与可选 Stop 兜底](skills/decision-review/references/runtime.md)
+- [运行时配置示例](skills/decision-review/runtime.example.json)
+- [复核与搜索工具协议](skills/decision-review/references/adapter-contract.md)
